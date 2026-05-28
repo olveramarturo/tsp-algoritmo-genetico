@@ -213,7 +213,7 @@ def setup_plots():
     except Exception:
         pass
 
-    plt.pause(0.05)
+    plt.pause(0.15)
     return fig1, ax1, route_line, dist_text, gen_text, fig2, ax2, fitness_line
 
 
@@ -235,7 +235,7 @@ def update_plots(ax1, route_line, dist_text, gen_text,
 
     fig1.canvas.draw_idle()
     fig2.canvas.draw_idle()
-    plt.pause(0.05)
+    plt.pause(0.15)
 
 
 # ----------------------------------------------------------
@@ -250,6 +250,10 @@ def run():
     print('-' * 50)
 
     fig1, ax1, route_line, dist_text, gen_text, fig2, ax2, fitness_line = setup_plots()
+
+    print('')
+    print('Acomoda las ventanas y presiona Enter para iniciar...')
+    input()
 
     # Paso 1: Poblacion inicial
     population = initialize_population()
