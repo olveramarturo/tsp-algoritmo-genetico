@@ -20,9 +20,7 @@ Parametros:
 
 import math
 import random
-import matplotlib.pyplot as plt          # type: ignore
-import matplotlib.patches as mpatches   # type: ignore
-from matplotlib.patches import Ellipse, Polygon  # type: ignore
+import matplotlib.pyplot as plt  # type: ignore
 
 
 # Coordenadas (x, y) de las 20 ciudades en el plano cartesiano
@@ -241,176 +239,6 @@ def update_plots(ax1, route_line, dist_text, gen_text,
 
 
 # ----------------------------------------------------------
-# DIAGRAMA DE FLUJO ANIMADO (Ventana 3)
-# ----------------------------------------------------------
-
-# Nodos del diagrama: (clave, etiqueta, x_centro, y_centro, forma, color_fondo, color_borde, color_texto)
-_FLOW_NODES = [
-    ('inicio',       'INICIO',                 5, 21.0, 'oval',    '#1d4ed8', '#1e3a8a', 'white'   ),
-    ('params',       'Inicializar parametros', 5, 19.3, 'rect',    '#ede9fe', '#7c3aed', '#4c1d95' ),
-    ('setup',        'setup_plots()',          5, 17.6, 'rect',    '#ede9fe', '#7c3aed', '#4c1d95' ),
-    ('pausa',        'Pausa interactiva',      5, 15.9, 'rect',    '#fef9c3', '#ca8a04', '#713f12' ),
-    ('poblacion',    'Poblacion inicial',      5, 14.2, 'rect',    '#ede9fe', '#7c3aed', '#4c1d95' ),
-    ('evaluar',      'Evaluar fitness',        5, 12.5, 'rect',    '#fef3c7', '#f59e0b', '#92400e' ),
-    ('actualizar',   'Actualizar mejor',       5, 10.8, 'rect',    '#fef3c7', '#f59e0b', '#92400e' ),
-    ('check_gen',    'gen < 100?',             5,  9.1, 'diamond', '#dbeafe', '#3b82f6', '#1e40af' ),
-    ('torneo',       'Torneo (x100)',          5,  7.4, 'rect',    '#dcfce7', '#16a34a', '#14532d' ),
-    ('reproduccion', 'Enroque / Inversion',    5,  5.7, 'rect',    '#dcfce7', '#16a34a', '#14532d' ),
-    ('encode',       'encode() -> hijo',       5,  4.0, 'rect',    '#dcfce7', '#16a34a', '#14532d' ),
-    ('check_hijos',  '100 hijos?',             5,  2.3, 'diamond', '#dbeafe', '#3b82f6', '#1e40af' ),
-    ('reemplazar',   'Reemplazar + Graficar',  5,  0.7, 'rect',    '#dcfce7', '#16a34a', '#14532d' ),
-    ('fin',          'FIN',                    5, -0.9, 'oval',    '#1d4ed8', '#1e3a8a', 'white'   ),
-]
-
-# Coordenadas centrales de cada nodo para posicionar la bandera
-_CENTERS = {node[0]: (node[2], node[3]) for node in _FLOW_NODES}
-
-# Estado global del diagrama animado
-_fd = {'fig': None, 'patches': {}, 'orig_ec': {}, 'orig_lw': {}, 'flag': None, 'prev': None}
-
-# Colores de resaltado para el nodo activo
-_HL_EC = '#f97316'   # naranja brillante
-_HL_LW = 3.0
-_NRM_LW = 1.5
-
-
-def setup_flowchart():
-    "Crea la Ventana 3 con el diagrama de flujo animado"
-    fig3, ax3 = plt.subplots(figsize=(3.8, 11))
-    try:
-        fig3.canvas.manager.set_window_title('Ventana 3 - Diagrama de Flujo')
-        fig3.canvas.manager.window.wm_geometry('+1380+30')
-    except Exception:
-        pass
-
-    ax3.set_xlim(0.5, 9.5)
-    ax3.set_ylim(-2.0, 22.5)
-    ax3.axis('off')
-    ax3.set_title('Flujo de ejecucion', fontsize=9, fontweight='bold', pad=3)
-
-    RW = 4.2   # ancho de los rectangulos
-    RH = 0.85  # alto de los rectangulos
-    DX = 2.1   # semi-ancho del diamante
-    DY = 0.62  # semi-alto del diamante
-
-    for key, label, xc, yc, shape, fc, ec, tc in _FLOW_NODES:
-        if shape == 'oval':
-            p = Ellipse((xc, yc), width=3.4, height=RH + 0.15,
-                        facecolor=fc, edgecolor=ec, linewidth=_NRM_LW, zorder=3)
-            ax3.add_patch(p)
-            ax3.text(xc, yc, label, ha='center', va='center',
-                     fontsize=8.5, fontweight='bold', color=tc, zorder=4)
-
-        elif shape == 'diamond':
-            pts = [(xc, yc + DY), (xc + DX, yc), (xc, yc - DY), (xc - DX, yc)]
-            p = Polygon(pts, closed=True,
-                        facecolor=fc, edgecolor=ec, linewidth=_NRM_LW, zorder=3)
-            ax3.add_patch(p)
-            ax3.text(xc, yc, label, ha='center', va='center',
-                     fontsize=7.5, fontweight='600', color=tc, zorder=4)
-
-        else:
-            p = mpatches.FancyBboxPatch(
-                (xc - RW / 2, yc - RH / 2), RW, RH,
-                boxstyle='round,pad=0.07',
-                facecolor=fc, edgecolor=ec, linewidth=_NRM_LW, zorder=3
-            )
-            ax3.add_patch(p)
-            ax3.text(xc, yc, label, ha='center', va='center',
-                     fontsize=8, fontweight='600', color=tc, zorder=4)
-
-        _fd['patches'][key] = p
-        _fd['orig_ec'][key] = ec
-        _fd['orig_lw'][key] = _NRM_LW
-
-    # Flechas entre nodos consecutivos
-    gaps = [
-        (21.0, 'oval',    19.3, 'rect'),
-        (19.3, 'rect',    17.6, 'rect'),
-        (17.6, 'rect',    15.9, 'rect'),
-        (15.9, 'rect',    14.2, 'rect'),
-        (14.2, 'rect',    12.5, 'rect'),
-        (12.5, 'rect',    10.8, 'rect'),
-        (10.8, 'rect',     9.1, 'diamond'),
-        ( 9.1, 'diamond',  7.4, 'rect'),
-        ( 7.4, 'rect',     5.7, 'rect'),
-        ( 5.7, 'rect',     4.0, 'rect'),
-        ( 4.0, 'rect',     2.3, 'diamond'),
-        ( 2.3, 'diamond',  0.7, 'rect'),
-        ( 0.7, 'rect',    -0.9, 'oval'),
-    ]
-
-    def bot(yc, shape):
-        "Punto inferior del nodo"
-        if shape == 'oval':    return yc - (RH + 0.15) / 2
-        if shape == 'diamond': return yc - DY
-        return yc - RH / 2
-
-    def top(yc, shape):
-        "Punto superior del nodo"
-        if shape == 'oval':    return yc + (RH + 0.15) / 2
-        if shape == 'diamond': return yc + DY
-        return yc + RH / 2
-
-    for y1, s1, y2, s2 in gaps:
-        ay = bot(y1, s1) - 0.05
-        by = top(y2, s2) + 0.05
-        ax3.annotate('', xy=(5, by), xytext=(5, ay),
-                     arrowprops=dict(arrowstyle='->', color='#9ca3af', lw=1.1))
-
-    # Flecha de retorno: reemplazar (y=0.7) -> evaluar (y=12.5) por la izquierda
-    loop_x = 1.0
-    ax3.plot([5 - RW / 2, loop_x], [0.7,  0.7],  color='#9ca3af', lw=1.1)
-    ax3.plot([loop_x,     loop_x], [0.7, 12.5],   color='#9ca3af', lw=1.1)
-    ax3.annotate('', xy=(5 - RW / 2, 12.5), xytext=(loop_x, 12.5),
-                 arrowprops=dict(arrowstyle='->', color='#9ca3af', lw=1.1))
-    ax3.text(loop_x - 0.25, 6.6, 'sig. gen.', fontsize=6.5, color='#9ca3af',
-             rotation=90, va='center', ha='center')
-
-    # Flecha NO de check_gen: hacia fin por la derecha
-    ax3.plot([5 + DX, 8.5], [9.1, 9.1],  color='#ef4444', lw=1.1)
-    ax3.plot([8.5,    8.5], [9.1, -0.9], color='#ef4444', lw=1.1)
-    ax3.annotate('', xy=(5 + 3.4 / 2, -0.9), xytext=(8.5, -0.9),
-                 arrowprops=dict(arrowstyle='->', color='#ef4444', lw=1.1))
-    ax3.text(8.8, 4.0, 'NO', fontsize=6.5, color='#ef4444', rotation=90, va='center')
-
-    # Bandera: triangulo rojo a la izquierda del nodo activo
-    flag_obj, = ax3.plot([], [], marker='>', ms=11, color='#ef4444',
-                         linestyle='none', zorder=7)
-    _fd['flag'] = flag_obj
-    _fd['fig']  = fig3
-
-    fig3.tight_layout(pad=0.4)
-    plt.pause(0.1)
-    return fig3
-
-
-def highlight_step(key, pause=0.0):
-    "Mueve la bandera al nodo activo y resalta su borde"
-    patches = _fd['patches']
-    prev    = _fd['prev']
-    flag    = _fd['flag']
-    fig3    = _fd['fig']
-
-    # Restaurar nodo anterior
-    if prev and prev in patches:
-        patches[prev].set_edgecolor(_fd['orig_ec'][prev])
-        patches[prev].set_linewidth(_fd['orig_lw'][prev])
-
-    # Resaltar nodo actual
-    if key in patches:
-        patches[key].set_edgecolor(_HL_EC)
-        patches[key].set_linewidth(_HL_LW)
-        xc, yc = _CENTERS[key]
-        flag.set_data([xc - 2.6], [yc])
-
-    _fd['prev'] = key
-    fig3.canvas.draw_idle()
-    if pause > 0:
-        plt.pause(pause)
-
-
-# ----------------------------------------------------------
 # ALGORITMO GENETICO PRINCIPAL
 # ----------------------------------------------------------
 
@@ -421,29 +249,18 @@ def run():
     print('Ciudades: %d | Poblacion: %d | Generaciones: %d' % (N, POP_SIZE, GENERATIONS))
     print('-' * 50)
 
-    # Ventana 3: diagrama de flujo (se abre primero para que sea visible desde el inicio)
-    setup_flowchart()
-    highlight_step('inicio', pause=0.7)
-    highlight_step('params', pause=0.6)
-    highlight_step('setup',  pause=0.5)
-
-    # Ventanas 1 y 2
     fig1, ax1, route_line, dist_text, gen_text, fig2, ax2, fitness_line = setup_plots()
 
-    highlight_step('pausa', pause=0.3)
     print('')
     print('Acomoda las ventanas y presiona Enter para iniciar...')
     input()
 
     # Paso 1: Poblacion inicial
-    highlight_step('poblacion', pause=0.6)
     population = initialize_population()
 
     # Pasos 2-3: Evaluar aptitud inicial
-    highlight_step('evaluar', pause=0.5)
     fitnesses  = [fitness(c) for c in population]
 
-    highlight_step('actualizar', pause=0.5)
     best_idx   = min(range(POP_SIZE), key=lambda i: fitnesses[i])
     best_chrom = population[best_idx][:]
     best_dist  = fitnesses[best_idx]
@@ -452,22 +269,14 @@ def run():
     # Paso 4: Ciclo for principal - 100 generaciones
     for gen in range(1, GENERATIONS + 1):
 
-        highlight_step('check_gen')
-
         # Pasos 5-9: 100 torneos, un hijo por torneo
-        highlight_step('torneo')
-        highlight_step('reproduccion')
-        highlight_step('encode')
         children = []
         for _ in range(POP_SIZE):
             parent = tournament_select(population, fitnesses)
             child  = reproduce(parent)
             children.append(child)
 
-        highlight_step('check_hijos')
-
         # Paso 10: Reemplazar poblacion con hijos
-        highlight_step('reemplazar')
         population = children
         fitnesses  = [fitness(c) for c in population]
 
@@ -485,13 +294,9 @@ def run():
                      ax2, fitness_line,
                      best_route, best_dist, gen, history, fig1, fig2)
 
-        # Actualizar diagrama de flujo tambien
-        _fd['fig'].canvas.draw_idle()
-
         print('Gen %3d | Mejor distancia = %.4f' % (gen, best_dist))
 
-    # Paso 12: Fin del ciclo
-    highlight_step('fin', pause=0.5)
+    # Paso 12: Cerrar ciclo for
     print('-' * 50)
     print('Resultado final')
     print('Mejor distancia : %.4f' % best_dist)
