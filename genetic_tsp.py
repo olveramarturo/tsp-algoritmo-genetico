@@ -20,7 +20,7 @@ Parametros:
 
 import math
 import random
-import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt  # type: ignore
 
 
 # Coordenadas (x, y) de las 20 ciudades en el plano cartesiano
