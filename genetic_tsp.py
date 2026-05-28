@@ -1,313 +1,399 @@
 """
 ================================================================
-  ALGORITMO GENÉTICO ORDINAL – PROBLEMA DEL AGENTE VIAJERO
+  ALGORITMO GENÉTICO ORDINAL — PROBLEMA DEL AGENTE VIAJERO
   (TSP – Traveling Salesman Problem)
 ================================================================
   Asignación 1 · Inteligencia Artificial · UAG
 
-  Codificación  : Ordinal
-  Selección     : Torneo (k-torneo)
-  Cruce         : Un punto (one-point crossover)
-  Mutación      : Reinicio aleatorio de gen
-  Reemplazo     : Elitismo + nueva generación
+  Especificaciones:
+  ┌─────────────────────────────────────────────────────────┐
+  │  Ciudades            : 20                               │
+  │  Población           : 100 cromosomas                   │
+  │  Generaciones        : 100                              │
+  │  Torneo              : 5% (5 candidatos de 100)         │
+  │  Reproducción        : Enroque  o  Inversión (50/50)    │
+  │  Codificación        : Ordinal                          │
+  │  Visualización       : 2 ventanas gráficas en tiempo    │
+  │                        real (ruta + función de aptitud) │
+  └─────────────────────────────────────────────────────────┘
 ================================================================
 """
 
 import math
 import random
-import time
-from typing import List, Tuple
-
-
-# ──────────────────────────────────────────────────────────────
-#  CLASE PRINCIPAL
-# ──────────────────────────────────────────────────────────────
-
-class GeneticTSP:
-    """Algoritmo genético con codificación ordinal para el TSP."""
-
-    def __init__(
-        self,
-        cities: List[Tuple[float, float]],
-        population_size: int = 200,
-        generations: int = 1000,
-        mutation_rate: float = 0.02,
-        crossover_rate: float = 0.85,
-        tournament_size: int = 5,
-        elite_count: int = 2,
-        log_interval: int = 100,
-        seed: int | None = None,
-    ):
-        self.cities = cities
-        self.n = len(cities)
-
-        self.population_size = population_size
-        self.generations     = generations
-        self.mutation_rate   = mutation_rate
-        self.crossover_rate  = crossover_rate
-        self.tournament_size = tournament_size
-        self.elite_count     = elite_count
-        self.log_interval    = log_interval
-
-        if seed is not None:
-            random.seed(seed)
-
-        self.population: List[List[int]] = []
-        self.best_chromosome: List[int] = []
-        self.best_fitness: float = float("inf")
-        self.history: List[float] = []   # mejor distancia por generación
-
-    # ── CODIFICACIÓN ORDINAL ───────────────────────────────────
-
-    def encode(self, route: List[int]) -> List[int]:
-        """
-        Codifica una ruta (permutación) en cromosoma ordinal.
-
-        Para cada ciudad en la ruta se localiza su posición dentro
-        de la lista de referencia restante y ese índice se guarda
-        como gen. Luego la ciudad se elimina de la lista.
-
-        Ejemplo con ruta [2, 0, 3, 1] y 4 ciudades:
-          ref=[0,1,2,3] → pos(2)=2 → gen 2, ref=[0,1,3]
-          ref=[0,1,3]   → pos(0)=0 → gen 0, ref=[1,3]
-          ref=[1,3]     → pos(3)=1 → gen 1, ref=[1]
-          ref=[1]       → pos(1)=0 → gen 0
-          Cromosoma = [2, 0, 1, 0]
-        """
-        ref = list(range(self.n))
-        chromosome = []
-        for city in route:
-            idx = ref.index(city)
-            chromosome.append(idx)
-            ref.pop(idx)
-        return chromosome
-
-    def decode(self, chromosome: List[int]) -> List[int]:
-        """
-        Decodifica un cromosoma ordinal a una ruta (proceso inverso).
-
-        Cada gen indica el índice en la lista de referencia restante
-        desde donde se extrae la próxima ciudad.
-        """
-        ref = list(range(self.n))
-        route = []
-        for i, gene in enumerate(chromosome):
-            idx = min(gene, len(ref) - 1)   # clamping de seguridad
-            route.append(ref[idx])
-            ref.pop(idx)
-        return route
-
-    # ── INICIALIZACIÓN ────────────────────────────────────────
-
-    def _random_chromosome(self) -> List[int]:
-        """
-        Genera un cromosoma ordinal aleatorio válido.
-        El gen i tiene rango [0, n-1-i].
-        """
-        return [random.randint(0, self.n - 1 - i) for i in range(self.n)]
-
-    def _initialize_population(self) -> None:
-        self.population = [self._random_chromosome()
-                           for _ in range(self.population_size)]
-
-    # ── FITNESS ───────────────────────────────────────────────
-
-    def _euclidean(self, a: int, b: int) -> float:
-        dx = self.cities[a][0] - self.cities[b][0]
-        dy = self.cities[a][1] - self.cities[b][1]
-        return math.sqrt(dx * dx + dy * dy)
-
-    def route_distance(self, route: List[int]) -> float:
-        """Distancia total de un recorrido circular."""
-        return sum(
-            self._euclidean(route[i], route[(i + 1) % self.n])
-            for i in range(self.n)
-        )
-
-    def fitness(self, chromosome: List[int]) -> float:
-        """Fitness de un cromosoma (menor distancia = mejor)."""
-        return self.route_distance(self.decode(chromosome))
-
-    # ── SELECCIÓN: Torneo ─────────────────────────────────────
-
-    def _tournament_select(self, fitnesses: List[float]) -> List[int]:
-        """
-        Selección por torneo: elige k individuos al azar y devuelve
-        el cromosoma con menor distancia.
-        """
-        indices = random.sample(range(self.population_size), self.tournament_size)
-        best = min(indices, key=lambda i: fitnesses[i])
-        return self.population[best][:]
-
-    # ── CRUCE: Un punto ───────────────────────────────────────
-
-    def _crossover(
-        self, p1: List[int], p2: List[int]
-    ) -> Tuple[List[int], List[int]]:
-        """
-        Cruce de un punto entre dos padres.
-
-        La codificación ordinal permite el cruce estándar sin producir
-        rutas inválidas, ya que cada gen tiene su propio rango
-        independiente [0, n-1-i].
-
-        Después del cruce se aplica un módulo por seguridad para
-        mantener la validez de cada gen.
-        """
-        if random.random() > self.crossover_rate:
-            return p1[:], p2[:]
-
-        point = random.randint(1, self.n - 2)
-        c1 = p1[:point] + p2[point:]
-        c2 = p2[:point] + p1[point:]
-
-        # Garantizar validez ordinal: gen[i] ∈ [0, n-1-i]
-        for i in range(self.n):
-            max_val = self.n - 1 - i
-            c1[i] = c1[i] % (max_val + 1)
-            c2[i] = c2[i] % (max_val + 1)
-
-        return c1, c2
-
-    # ── MUTACIÓN: Reinicio aleatorio ──────────────────────────
-
-    def _mutate(self, chromosome: List[int]) -> List[int]:
-        """
-        Mutación por reinicio: cada gen muta con probabilidad
-        mutation_rate a un valor aleatorio válido en su rango.
-        """
-        mutant = chromosome[:]
-        for i in range(self.n):
-            if random.random() < self.mutation_rate:
-                mutant[i] = random.randint(0, self.n - 1 - i)
-        return mutant
-
-    # ── BUCLE PRINCIPAL ───────────────────────────────────────
-
-    def run(self) -> dict:
-        """
-        Ejecuta el algoritmo genético completo.
-
-        Flujo por generación:
-          1. Evaluar fitness de toda la población
-          2. Actualizar mejor solución global
-          3. Elitismo: copiar los mejores directamente
-          4. Selección → Cruce → Mutación para completar nueva generación
-          5. Reemplazar población
-
-        Returns:
-            dict con 'route', 'distance' e 'history'
-        """
-        print("Inicializando población…\n")
-        self._initialize_population()
-        start = time.perf_counter()
-
-        for gen in range(self.generations):
-
-            # 1. Evaluar fitness
-            fitnesses = [self.fitness(c) for c in self.population]
-
-            # 2. Actualizar mejor solución global
-            min_fit = min(fitnesses)
-            min_idx = fitnesses.index(min_fit)
-
-            if min_fit < self.best_fitness:
-                self.best_fitness    = min_fit
-                self.best_chromosome = self.population[min_idx][:]
-
-            self.history.append(self.best_fitness)
-
-            # Log periódico
-            if gen % self.log_interval == 0 or gen == self.generations - 1:
-                avg = sum(fitnesses) / len(fitnesses)
-                elapsed = time.perf_counter() - start
-                print(
-                    f"  Gen {gen:>4d} │ "
-                    f"Mejor = {self.best_fitness:>10.2f}  │ "
-                    f"Promedio = {avg:>10.2f}  │ "
-                    f"Tiempo = {elapsed:>5.1f}s"
-                )
-
-            # 3. Elitismo: preservar los mejores individuos
-            ranked = sorted(range(self.population_size), key=lambda i: fitnesses[i])
-            new_pop = [self.population[i][:] for i in ranked[: self.elite_count]]
-
-            # 4. Completar nueva generación
-            while len(new_pop) < self.population_size:
-                p1 = self._tournament_select(fitnesses)
-                p2 = self._tournament_select(fitnesses)
-                c1, c2 = self._crossover(p1, p2)
-                new_pop.append(self._mutate(c1))
-                if len(new_pop) < self.population_size:
-                    new_pop.append(self._mutate(c2))
-
-            # 5. Reemplazar población
-            self.population = new_pop
-
-        best_route = self.decode(self.best_chromosome)
-        return {
-            "route":    best_route,
-            "distance": self.best_fitness,
-            "history":  self.history,
-        }
-
+import sys
+import matplotlib
+import matplotlib.pyplot as plt
 
 # ──────────────────────────────────────────────────────────────
-#  PUNTO DE ENTRADA
+#  CIUDADES — 20 puntos en plano cartesiano
+#  Etiqueta visual: C1..C20  |  Índice interno: 0..19
 # ──────────────────────────────────────────────────────────────
+CITIES = [
+    ( 1,  3), ( 3,  1), ( 5,  2), ( 7,  1), ( 9,  3),
+    (10,  5), ( 9,  7), ( 7,  9), ( 5, 10), ( 3,  9),
+    ( 1,  7), ( 2,  5), ( 4,  4), ( 6,  3), ( 8,  5),
+    ( 7,  7), ( 5,  6), ( 3,  6), ( 4,  8), ( 6,  8),
+]
+N = len(CITIES)   # 20
 
-def main() -> None:
-    # 25 ciudades con coordenadas (x, y)
-    # Subconjunto inspirado en instancias clásicas de benchmarking TSP
-    cities = [
-        (565, 575), ( 25, 185), (345, 750), (945, 685), (845, 655),
-        (880, 660), ( 25, 230), (525,1000), (580,1175), (650,1130),
-        (1605, 620),(1220, 580),(1465, 200),(1530,   5),(845, 680),
-        (725, 370), (145, 665), (415, 635), (510, 875), (560, 365),
-        (300, 465), (520, 585), (480, 415), (835, 625), (975, 580),
-    ]
+# ──────────────────────────────────────────────────────────────
+#  PARÁMETROS DEL ALGORITMO
+# ──────────────────────────────────────────────────────────────
+POP_SIZE        = 100   # individuos por generación
+GENERATIONS     = 100   # iteraciones del ciclo principal
+TOURNAMENT_SIZE = 5     # 5 % de la población = 5 de 100
+SEED            = 42    # reproducibilidad
 
-    params = dict(
-        population_size = 200,
-        generations     = 1000,
-        mutation_rate   = 0.02,
-        crossover_rate  = 0.85,
-        tournament_size = 5,
-        elite_count     = 2,
-        log_interval    = 100,
-        seed            = 42,
+random.seed(SEED)
+
+
+# ══════════════════════════════════════════════════════════════
+#  CODIFICACIÓN ORDINAL
+# ══════════════════════════════════════════════════════════════
+
+def encode(route: list) -> list:
+    """
+    Permutación → cromosoma ordinal.
+
+    Para cada ciudad de la ruta se busca su posición en la lista
+    de referencia restante y ese índice se guarda como gen.
+    Gen i tiene rango válido [0, N-1-i].
+
+    Ejemplo  ruta=[2,0,3,1], N=4:
+      ref=[0,1,2,3] → ciudad 2 en pos 2 → gen=2, ref=[0,1,3]
+      ref=[0,1,3]   → ciudad 0 en pos 0 → gen=0, ref=[1,3]
+      ref=[1,3]     → ciudad 3 en pos 1 → gen=1, ref=[1]
+      ref=[1]       → ciudad 1 en pos 0 → gen=0
+      Cromosoma = [2, 0, 1, 0]
+    """
+    ref = list(range(N))
+    chrom = []
+    for city in route:
+        idx = ref.index(city)
+        chrom.append(idx)
+        ref.pop(idx)
+    return chrom
+
+
+def decode(chrom: list) -> list:
+    """
+    Cromosoma ordinal → permutación (proceso inverso).
+
+    Cada gen indica el índice en la lista de referencia restante
+    desde donde se extrae la próxima ciudad.
+    """
+    ref = list(range(N))
+    route = []
+    for gene in chrom:
+        idx = min(gene, len(ref) - 1)   # clamping de seguridad
+        route.append(ref[idx])
+        ref.pop(idx)
+    return route
+
+
+# ══════════════════════════════════════════════════════════════
+#  FUNCIÓN DE FITNESS (aptitud)
+# ══════════════════════════════════════════════════════════════
+
+def euclidean(a: int, b: int) -> float:
+    """Distancia euclidiana entre las ciudades a y b."""
+    dx = CITIES[a][0] - CITIES[b][0]
+    dy = CITIES[a][1] - CITIES[b][1]
+    return math.sqrt(dx * dx + dy * dy)
+
+
+def route_distance(route: list) -> float:
+    """Distancia total del recorrido circular (suma de tramos consecutivos)."""
+    return sum(
+        euclidean(route[i], route[(i + 1) % N])
+        for i in range(N)
     )
 
-    print("╔══════════════════════════════════════════════════════════╗")
-    print("║   ALGORITMO GENÉTICO ORDINAL — TSP  │  UAG · IA          ║")
-    print("╚══════════════════════════════════════════════════════════╝\n")
-    print(f"  Ciudades            : {len(cities)}")
-    print(f"  Tamaño de población : {params['population_size']}")
-    print(f"  Generaciones        : {params['generations']}")
-    print(f"  Tasa de mutación    : {params['mutation_rate']}")
-    print(f"  Tasa de cruce       : {params['crossover_rate']}")
-    print(f"  Tamaño de torneo    : {params['tournament_size']}")
-    print(f"  Élite               : {params['elite_count']} individuos")
-    print(f"  Semilla aleatoria   : {params['seed']}")
-    print(f"  Codificación        : Ordinal\n")
-    print("─" * 62)
 
-    ga = GeneticTSP(cities, **params)
-    result = ga.run()
-
-    improvement = (ga.history[0] - result["distance"]) / ga.history[0] * 100
-
-    print("─" * 62)
-    print("\n╔══════════════════════════════════════════════════════════╗")
-    print("║                    RESULTADO FINAL                       ║")
-    print("╚══════════════════════════════════════════════════════════╝")
-    print(f"\n  Mejor distancia encontrada : {result['distance']:.2f}")
-    print(f"  Distancia inicial (gen 0)  : {ga.history[0]:.2f}")
-    print(f"  Mejora total               : {improvement:.1f}%\n")
-    print("  Ruta óptima encontrada:")
-    route_str = " → ".join(f"C{c}" for c in result["route"])
-    print(f"    {route_str} → C{result['route'][0]}\n")
+def fitness(chrom: list) -> float:
+    """Aptitud = distancia total de la ruta decodificada (menor = mejor)."""
+    return route_distance(decode(chrom))
 
 
-if __name__ == "__main__":
-    main()
+# ══════════════════════════════════════════════════════════════
+#  INICIALIZACIÓN DE LA POBLACIÓN
+# ══════════════════════════════════════════════════════════════
+
+def random_chromosome() -> list:
+    """
+    Genera un cromosoma ordinal aleatorio válido.
+    Gen i ∈ [0, N-1-i] garantiza siempre una ruta decodificable.
+    """
+    return [random.randint(0, N - 1 - i) for i in range(N)]
+
+
+def initialize_population() -> list:
+    """Paso 1: Crear aleatoriamente 100 cromosomas de longitud 20."""
+    return [random_chromosome() for _ in range(POP_SIZE)]
+
+
+# ══════════════════════════════════════════════════════════════
+#  SELECCIÓN — Torneo
+# ══════════════════════════════════════════════════════════════
+
+def tournament_select(population: list, fitnesses: list) -> list:
+    """
+    Selección por torneo (Paso 6-7).
+
+    Se eligen pseudo-aleatoriamente 5 candidatos de la población
+    (5 % de 100). El cromosoma con menor distancia es el ganador
+    y podrá reproducirse.  Un mismo cromosoma puede ganar más de
+    un torneo; el tamaño acotado del torneo modera este privilegio.
+    """
+    indices = random.sample(range(POP_SIZE), TOURNAMENT_SIZE)
+    winner  = min(indices, key=lambda i: fitnesses[i])
+    return population[winner][:]
+
+
+# ══════════════════════════════════════════════════════════════
+#  OPERADORES DE REPRODUCCIÓN (Paso 8)
+# ══════════════════════════════════════════════════════════════
+
+def enroque(route: list) -> list:
+    """
+    Operador ENROQUE: selecciona dos bloques de igual longitud
+    dentro del cromosoma (inicio y dimensión variables pero siempre
+    de igual largo entre sí) e intercambia ambos segmentos.
+
+    Este intercambio genera rutas diferentes que mantienen la
+    validez de la permutación.
+    """
+    length  = random.randint(1, max(1, N // 4))
+    max_p1  = N - 2 * length
+    if max_p1 < 0:
+        return route[:]
+    pos1 = random.randint(0, max_p1)
+    pos2 = random.randint(pos1 + length, N - length)
+
+    child = route[:]
+    child[pos1:pos1 + length], child[pos2:pos2 + length] = \
+        child[pos2:pos2 + length], child[pos1:pos1 + length]
+    return child
+
+
+def inversion(route: list) -> list:
+    """
+    Operador INVERSIÓN: selecciona un bloque de inicio y longitud
+    variables dentro del cromosoma y lo invierte.
+
+    Equivale al movimiento 2-opt clásico en TSP; es especialmente
+    útil para eliminar bucles en el recorrido del agente viajero.
+    """
+    i = random.randint(0, N - 2)
+    j = random.randint(i + 1, N - 1)
+    child = route[:]
+    child[i:j + 1] = list(reversed(child[i:j + 1]))
+    return child
+
+
+def reproduce(parent_chrom: list) -> list:
+    """
+    Paso 8: aplica pseudo-aleatoriamente enroque o inversión
+    sobre la ruta decodificada y devuelve el hijo re-codificado.
+
+    Decodificar → operar sobre la ruta → re-codificar garantiza
+    que el cromosoma hijo sea siempre un ordinal válido.
+    """
+    route = decode(parent_chrom)
+    if random.random() < 0.5:
+        child_route = enroque(route)
+    else:
+        child_route = inversion(route)
+    return encode(child_route)
+
+
+# ══════════════════════════════════════════════════════════════
+#  VISUALIZACIÓN — 2 ventanas en tiempo real (Paso 11)
+# ══════════════════════════════════════════════════════════════
+
+def setup_plots():
+    """
+    Inicializa las dos ventanas gráficas:
+      Ventana 1 – Ruta del individuo más apto (actualizada por generación)
+      Ventana 2 – Función de aptitud: distancia mínima vs. generación
+    """
+    plt.ion()
+
+    # ── Ventana 1: Ruta ──────────────────────────────────────
+    fig1, ax1 = plt.subplots(figsize=(6, 6))
+    try:
+        fig1.canvas.manager.set_window_title('Ventana 1 — Ruta del Agente Viajero')
+    except Exception:
+        pass
+
+    xs = [c[0] for c in CITIES]
+    ys = [c[1] for c in CITIES]
+
+    ax1.set_xlim(-0.5, 11.5)
+    ax1.set_ylim(-0.5, 11.5)
+    ax1.set_title('Ruta del individuo más apto', fontsize=12, fontweight='bold')
+    ax1.set_xlabel('X')
+    ax1.set_ylabel('Y')
+    ax1.grid(True, alpha=0.3)
+    ax1.scatter(xs, ys, s=130, c='steelblue', zorder=5)
+
+    for i, (x, y) in enumerate(CITIES):
+        ax1.annotate(f'C{i+1}', (x, y),
+                     textcoords='offset points', xytext=(5, 4),
+                     fontsize=7, color='navy', fontweight='bold')
+
+    route_line, = ax1.plot([], [], 'tomato', linewidth=1.8, alpha=0.85, zorder=4)
+
+    dist_text = ax1.text(
+        0.02, 0.97, '', transform=ax1.transAxes,
+        fontsize=10, va='top', fontweight='bold',
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='lightyellow',
+                  edgecolor='goldenrod', alpha=0.9)
+    )
+    gen_text = ax1.text(
+        0.02, 0.89, '', transform=ax1.transAxes,
+        fontsize=9, va='top', color='dimgray'
+    )
+
+    try:
+        fig1.canvas.manager.window.wm_geometry('+30+50')
+    except Exception:
+        pass
+
+    # ── Ventana 2: Función de aptitud ────────────────────────
+    fig2, ax2 = plt.subplots(figsize=(6, 4))
+    try:
+        fig2.canvas.manager.set_window_title('Ventana 2 — Función de Aptitud')
+    except Exception:
+        pass
+
+    ax2.set_title('Distancia mínima por generación', fontsize=12, fontweight='bold')
+    ax2.set_xlabel('Generación')
+    ax2.set_ylabel('Distancia del mejor individuo')
+    ax2.set_xlim(0, GENERATIONS)
+    ax2.grid(True, alpha=0.3)
+
+    fitness_line, = ax2.plot([], [], color='steelblue', linewidth=2)
+    ax2.set_ylim(0, 1)   # se ajusta dinámicamente
+
+    try:
+        fig2.canvas.manager.window.wm_geometry('+720+50')
+    except Exception:
+        pass
+
+    plt.pause(0.05)
+    return (fig1, ax1, route_line, dist_text, gen_text,
+            fig2, ax2, fitness_line)
+
+
+def update_plots(ax1, route_line, dist_text, gen_text,
+                 ax2, fitness_line,
+                 route, distance, gen, history,
+                 fig1, fig2):
+    """Refresca ambas ventanas al terminar cada generación."""
+
+    # Ventana 1 — actualizar ruta
+    rxs = [CITIES[c][0] for c in route] + [CITIES[route[0]][0]]
+    rys = [CITIES[c][1] for c in route] + [CITIES[route[0]][1]]
+    route_line.set_data(rxs, rys)
+    dist_text.set_text(f'Distancia: {distance:.4f}')
+    gen_text.set_text(f'Generación: {gen}')
+
+    # Ventana 2 — actualizar curva de aptitud
+    gens = list(range(1, len(history) + 1))
+    fitness_line.set_data(gens, history)
+    ymin, ymax = min(history), max(history)
+    margin = (ymax - ymin) * 0.1 + 0.5
+    ax2.set_ylim(ymin - margin, ymax + margin)
+
+    fig1.canvas.draw_idle()
+    fig2.canvas.draw_idle()
+    plt.pause(0.05)
+
+
+# ══════════════════════════════════════════════════════════════
+#  ALGORITMO GENÉTICO — BUCLE PRINCIPAL
+# ══════════════════════════════════════════════════════════════
+
+def run():
+    print('╔══════════════════════════════════════════════════════════╗')
+    print('║   ALGORITMO GENÉTICO ORDINAL — TSP  │  UAG · IA          ║')
+    print('╚══════════════════════════════════════════════════════════╝\n')
+    print(f'  Ciudades            : {N}')
+    print(f'  Tamaño de población : {POP_SIZE}')
+    print(f'  Generaciones        : {GENERATIONS}')
+    print(f'  Torneo              : {TOURNAMENT_SIZE} candidatos '
+          f'({TOURNAMENT_SIZE / POP_SIZE * 100:.0f}% de la población)')
+    print( '  Reproducción        : Enroque / Inversión (50 % / 50 %)')
+    print( '  Codificación        : Ordinal')
+    print( '  Visualización       : 2 ventanas en tiempo real\n')
+    print('─' * 62)
+
+    # ── Inicializar gráficas ──────────────────────────────────
+    (fig1, ax1, route_line, dist_text, gen_text,
+     fig2, ax2, fitness_line) = setup_plots()
+
+    # ── Paso 1: Población inicial ─────────────────────────────
+    population = initialize_population()
+
+    # ── Pasos 2-3: Evaluar aptitud inicial ────────────────────
+    fitnesses  = [fitness(c) for c in population]
+
+    best_idx   = min(range(POP_SIZE), key=lambda i: fitnesses[i])
+    best_chrom = population[best_idx][:]
+    best_dist  = fitnesses[best_idx]
+    history    = []
+
+    # ── Paso 4: Ciclo for principal — 100 generaciones ────────
+    for gen in range(1, GENERATIONS + 1):
+
+        # ── Pasos 5-9: 100 torneos → 100 hijos ───────────────
+        children = []
+        for _ in range(POP_SIZE):
+            parent = tournament_select(population, fitnesses)   # paso 6-7
+            child  = reproduce(parent)                          # paso 8-9
+            children.append(child)
+
+        # ── Paso 10: Reemplazar población con hijos ───────────
+        population = children
+        fitnesses  = [fitness(c) for c in population]
+
+        # Actualizar mejor global
+        min_fit = min(fitnesses)
+        min_idx = fitnesses.index(min_fit)
+        if min_fit < best_dist:
+            best_dist  = min_fit
+            best_chrom = population[min_idx][:]
+
+        history.append(best_dist)
+
+        # ── Paso 11: Graficar ruta y función de aptitud ───────
+        best_route = decode(best_chrom)
+        update_plots(ax1, route_line, dist_text, gen_text,
+                     ax2, fitness_line,
+                     best_route, best_dist, gen, history,
+                     fig1, fig2)
+
+        print(f'  Gen {gen:>3d} │ Mejor distancia = {best_dist:>10.4f}')
+
+    # ── Paso 12: Cerrar ciclo for ─────────────────────────────
+    print('─' * 62)
+    print('\n╔══════════════════════════════════════════════════════════╗')
+    print('║                    RESULTADO FINAL                       ║')
+    print('╚══════════════════════════════════════════════════════════╝')
+    print(f'\n  Mejor distancia encontrada : {best_dist:.4f}')
+    print(f'  Distancia inicial (gen 1)  : {history[0]:.4f}')
+    improvement = (history[0] - best_dist) / history[0] * 100
+    print(f'  Mejora total               : {improvement:.1f}%')
+    best_route = decode(best_chrom)
+    ruta_str   = ' → '.join(f'C{c + 1}' for c in best_route)
+    print(f'\n  Ruta óptima encontrada:')
+    print(f'    {ruta_str} → C{best_route[0] + 1}\n')
+
+    plt.ioff()
+    plt.show()   # mantiene las ventanas abiertas al terminar
+
+
+if __name__ == '__main__':
+    run()
